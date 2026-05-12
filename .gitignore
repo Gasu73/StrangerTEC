@@ -1,0 +1,48 @@
+# =========================
+# Python
+# =========================
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Entornos virtuales
+venv/
+.env/
+
+# VS Code
+.vscode/
+.micropico
+
+# Thonny
+.thonny/
+
+# Archivos temporales
+*.tmp
+*.log
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
+
+# =========================
+# MicroPython
+# =========================
+*.mpy
+
+# =========================
+# Serial / Config
+# =========================
+config.py
+secrets.py
+
+# =========================
+# Builds
+# =========================
+dist/
+build/
+
+# =========================
+# Caché
+# =========================
+.cache/
