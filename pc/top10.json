@@ -1,0 +1,14 @@
+[
+  {
+    "nombre": "JUGADOR A",
+    "puntos": 220,
+    "modo": "Modo1",
+    "fecha": "12/05/26"
+  },
+  {
+    "nombre": "JUGADOR B",
+    "puntos": 0,
+    "modo": "Modo1",
+    "fecha": "12/05/26"
+  }
+]

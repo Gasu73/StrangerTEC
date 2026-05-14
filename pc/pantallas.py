@@ -1,24 +1,20 @@
 # =========================================================
 # pantallas.py
-# Define las 4 pantallas de la aplicación:
-#   1. Conexión
-#   2. Configuración de partida
-#   3. Juego
-#   4. Top 10
+# Define las 4 pantallas de la aplicación.
 # =========================================================
-
+ 
 import tkinter as tk
 from tkinter import messagebox
 import random
 import time
 import threading
-
+ 
 import estado
 from constantes import (
     COLOR_FONDO, COLOR_TEXTO, COLOR_ROJO, COLOR_GRIS,
     COLOR_VERDE, COLOR_FONDO_OSCURO,
     FUENTE_TITULO, FUENTE_GRANDE, FUENTE_MEDIANA, FUENTE_NORMAL,
-    MAXIMAS_RONDAS,
+    MAXIMAS_RONDAS, MORSE_INVERSO,
 )
 from widgets import (
     limpiar_pantalla, crear_label, crear_label_variable,
@@ -29,139 +25,285 @@ from utilidades import (
     top10_cargar, top10_guardar, top10_agregar_entrada,
 )
 from red import enviar_a_raspberry
-
-
-# La ventana principal se recibe como parámetro para no
-# crear dependencias circulares con main.py
-ventana        = None
-contenedor     = None
+ 
+ 
+ventana         = None
+contenedor      = None
 pantalla_actual = None
-
-
+ 
+ 
 def inicializar(ventana_principal, contenedor_principal):
-    """Debe llamarse desde main.py antes de mostrar cualquier pantalla."""
     global ventana, contenedor
     ventana    = ventana_principal
     contenedor = contenedor_principal
-
-
+ 
+ 
 def _limpiar():
-    """Wrapper interno que actualiza pantalla_actual."""
     global pantalla_actual
+    _cancelar_timer()
     pantalla_actual = limpiar_pantalla(contenedor, pantalla_actual)
     return pantalla_actual
-
-
+ 
+ 
+# =========================================================
+# CUENTA REGRESIVA
+# =========================================================
+ 
+def _cancelar_timer():
+    if estado.id_timer_tkinter is not None:
+        try:
+            ventana.after_cancel(estado.id_timer_tkinter)
+        except Exception:
+            pass
+    estado.id_timer_tkinter = None
+    estado.timer_activo     = False
+ 
+ 
+def _iniciar_cuenta_regresiva(variable_timer, callback_fin):
+    """
+    Arranca la cuenta regresiva de SEGUNDOS_POR_RONDA segundos.
+    Actualiza variable_timer cada segundo.
+    Al llegar a 0 llama a callback_fin().
+    """
+    estado.segundos_restantes = estado.SEGUNDOS_POR_RONDA
+    estado.timer_activo       = True
+ 
+    def _tick():
+        if not estado.timer_activo:
+            return
+ 
+        variable_timer.set(f'  {estado.segundos_restantes}s')
+ 
+        if estado.segundos_restantes <= 0:
+            estado.timer_activo = False
+            variable_timer.set('  0s')
+            callback_fin()
+            return
+ 
+        estado.segundos_restantes -= 1
+        estado.id_timer_tkinter    = ventana.after(1000, _tick)
+ 
+    _tick()
+ 
+ 
+# =========================================================
+# MORSE EN TIEMPO REAL — TECLA K
+# =========================================================
+ 
+# ID de los after() del cierre de letra y palabra
+_id_cierre_letra   = None
+_id_cierre_palabra = None
+ 
+ 
+def _morse_key_press(evento, variable_impulso):
+    """
+    Se llama al presionar K.
+    Ignora repeticiones automáticas del SO verificando que
+    tiempo_ultimo_evento_seg esté en 0.
+    """
+    if estado.tiempo_ultimo_evento_seg != 0.0:
+        return
+    estado.tiempo_ultimo_evento_seg = time.time()
+ 
+ 
+def _morse_key_release(evento, variable_impulso, variable_texto):
+    """
+    Se llama al soltar K.
+    Calcula duración -> punto o raya y actualiza los displays.
+    """
+    global _id_cierre_letra, _id_cierre_palabra
+ 
+    if estado.tiempo_ultimo_evento_seg == 0.0:
+        return
+ 
+    duracion = time.time() - estado.tiempo_ultimo_evento_seg
+    estado.tiempo_ultimo_evento_seg = 0.0
+ 
+    if duracion < estado.UMBRAL_RAYA_PC_SEG:
+        estado.codigo_morse_en_curso += '.'
+    else:
+        estado.codigo_morse_en_curso += '-'
+ 
+    variable_impulso.set(estado.codigo_morse_en_curso)
+ 
+    # Cancelar temporizadores anteriores de cierre
+    if _id_cierre_letra is not None:
+        try:
+            ventana.after_cancel(_id_cierre_letra)
+        except Exception:
+            pass
+ 
+    if _id_cierre_palabra is not None:
+        try:
+            ventana.after_cancel(_id_cierre_palabra)
+        except Exception:
+            pass
+ 
+    ms_letra   = int(estado.PAUSA_FIN_LETRA_SEG   * 1000)
+    ms_palabra = int(estado.PAUSA_FIN_PALABRA_SEG  * 1000)
+ 
+    def _cerrar_letra():
+        global _id_cierre_palabra
+        if estado.codigo_morse_en_curso == '':
+            return
+        letra = MORSE_INVERSO.get(estado.codigo_morse_en_curso, '?')
+        estado.texto_morse_acumulado  += letra
+        estado.codigo_morse_en_curso   = ''
+        variable_impulso.set('')
+        variable_texto.set(estado.texto_morse_acumulado)
+ 
+        def _cerrar_palabra():
+            if not estado.texto_morse_acumulado.endswith(' '):
+                estado.texto_morse_acumulado += ' '
+                variable_texto.set(estado.texto_morse_acumulado)
+ 
+        _id_cierre_palabra = ventana.after(ms_palabra, _cerrar_palabra)
+ 
+    _id_cierre_letra = ventana.after(ms_letra, _cerrar_letra)
+ 
+ 
+def _resetear_morse_pc(variable_impulso=None, variable_texto=None):
+    """Limpia todo el estado morse del jugador que usa la PC."""
+    global _id_cierre_letra, _id_cierre_palabra
+ 
+    estado.codigo_morse_en_curso    = ''
+    estado.texto_morse_acumulado    = ''
+    estado.tiempo_ultimo_evento_seg = 0.0
+ 
+    for id_timer in [_id_cierre_letra, _id_cierre_palabra]:
+        if id_timer is not None:
+            try:
+                ventana.after_cancel(id_timer)
+            except Exception:
+                pass
+ 
+    _id_cierre_letra   = None
+    _id_cierre_palabra = None
+ 
+    if variable_impulso is not None:
+        variable_impulso.set('')
+ 
+    if variable_texto is not None:
+        variable_texto.set('')
+ 
+ 
 # =========================================================
 # PANTALLA 1 — CONEXIÓN
 # =========================================================
-
+ 
 def pantalla_conexion():
-
+ 
     pantalla = _limpiar()
-
+ 
     crear_label(pantalla, 'STRANGERTEC', FUENTE_TITULO, COLOR_ROJO).pack(pady=(10, 4))
     crear_label(pantalla, 'Morse Translator — ITCR', FUENTE_MEDIANA, COLOR_GRIS).pack()
-
+ 
     crear_separador(pantalla)
-
+ 
     crear_label(pantalla, 'IP de la Raspberry Pi:', FUENTE_NORMAL).pack(pady=(4, 4))
-
+ 
     variable_ip = tk.StringVar()
     crear_entrada(pantalla, variable_ip, 16).pack()
-
+ 
     variable_estado_conexion = tk.StringVar()
-    crear_label_variable(pantalla, variable_estado_conexion, FUENTE_NORMAL, COLOR_ROJO).pack(pady=6)
-
+    crear_label_variable(
+        pantalla, variable_estado_conexion, FUENTE_NORMAL, COLOR_ROJO
+    ).pack(pady=6)
+ 
     def intentar_conexion():
         ip_ingresada = variable_ip.get().strip()
-
+ 
         if not ip_ingresada:
             variable_estado_conexion.set('Ingresa una IP primero')
             return
-
+ 
         variable_estado_conexion.set('Conectando...')
         ventana.update()
-
-        conexion_exitosa = enviar_a_raspberry(ip_ingresada, 'ambos', 'HOLA', 200)
-
+ 
+        conexion_exitosa = enviar_a_raspberry(ip_ingresada, 'ok', 200)
+ 
         if conexion_exitosa:
             estado.ip_raspberry = ip_ingresada
-            variable_estado_conexion.set('¡Conectado!')
+            variable_estado_conexion.set('Conectado!')
         else:
             variable_estado_conexion.set('Error — verifica la IP')
-
+ 
     crear_boton(pantalla, 'CONECTAR', intentar_conexion, 22).pack(pady=10)
-
+ 
     crear_boton(
         pantalla, 'INICIAR JUEGO', pantalla_configuracion, 28, '#333333'
     ).pack(pady=2)
-
+ 
     crear_separador(pantalla)
-
+ 
     crear_boton(
         pantalla, 'Ver Top 10',
         lambda: pantalla_top10(volver=pantalla_conexion),
         18, '#333333'
     ).pack()
-
-
+ 
+ 
 # =========================================================
 # PANTALLA 2 — CONFIGURACIÓN DE PARTIDA
 # =========================================================
-
+ 
 def pantalla_configuracion():
-
+ 
     pantalla = _limpiar()
-
-    crear_label(pantalla, 'CONFIGURAR PARTIDA', FUENTE_GRANDE, COLOR_ROJO).pack(pady=(0, 14))
-
+ 
+    crear_label(
+        pantalla, 'CONFIGURAR PARTIDA', FUENTE_GRANDE, COLOR_ROJO
+    ).pack(pady=(0, 14))
+ 
     formulario = tk.Frame(pantalla, bg=COLOR_FONDO)
     formulario.pack()
-
-    # --- Nombres ---
-    crear_label(formulario, 'Jugador A (teclado):', FUENTE_NORMAL).grid(
+ 
+    crear_label(formulario, 'Jugador A:', FUENTE_NORMAL).grid(
         row=0, column=0, sticky='e', padx=14, pady=6)
     variable_nombre_a = tk.StringVar(value=estado.nombre_jugador_a)
-    crear_entrada(formulario, variable_nombre_a, 18).grid(row=0, column=1, sticky='w', pady=6)
-
-    crear_label(formulario, 'Jugador B (botón físico):', FUENTE_NORMAL).grid(
+    crear_entrada(formulario, variable_nombre_a, 18).grid(
+        row=0, column=1, sticky='w', pady=6)
+ 
+    crear_label(formulario, 'Jugador B:', FUENTE_NORMAL).grid(
         row=1, column=0, sticky='e', padx=14, pady=6)
     variable_nombre_b = tk.StringVar(value=estado.nombre_jugador_b)
-    crear_entrada(formulario, variable_nombre_b, 18).grid(row=1, column=1, sticky='w', pady=6)
-
-    # --- Modo de juego ---
+    crear_entrada(formulario, variable_nombre_b, 18).grid(
+        row=1, column=1, sticky='w', pady=6)
+ 
     crear_label(formulario, 'Modo de juego:', FUENTE_NORMAL).grid(
         row=2, column=0, sticky='ne', padx=14, pady=6)
-
+ 
     variable_modo = tk.IntVar(value=estado.modo_juego)
     marco_modos = tk.Frame(formulario, bg=COLOR_FONDO)
     marco_modos.grid(row=2, column=1, sticky='w', pady=6)
-
-    for valor, descripcion in [(1, 'Transmisión Simple'), (2, 'Escucha y Transmisión')]:
+ 
+    for valor, descripcion in [
+        (1, 'Transmision Simple'),
+        (2, 'Escucha y Transmision'),
+    ]:
         tk.Radiobutton(
             marco_modos,
             text=descripcion,
             variable=variable_modo,
             value=valor,
-            bg=COLOR_FONDO,
-            fg=COLOR_TEXTO,
+            bg=COLOR_FONDO, fg=COLOR_TEXTO,
             selectcolor='#333',
             activebackground=COLOR_FONDO,
             font=FUENTE_NORMAL,
         ).pack(anchor='w')
-
+ 
     crear_separador(pantalla)
-
-    # --- Lista de frases ---
-    crear_label(pantalla, 'Frases del juego (máx. 16 caracteres):', FUENTE_NORMAL).pack()
-
+ 
+    crear_label(
+        pantalla, 'Frases del juego (max. 16 caracteres):', FUENTE_NORMAL
+    ).pack()
+ 
     marco_lista = tk.Frame(pantalla, bg=COLOR_FONDO)
     marco_lista.pack(pady=6)
-
+ 
     barra_scroll = tk.Scrollbar(marco_lista)
     barra_scroll.pack(side='right', fill='y')
-
+ 
     lista_widget = tk.Listbox(
         marco_lista,
         yscrollcommand=barra_scroll.set,
@@ -173,52 +315,52 @@ def pantalla_configuracion():
     )
     lista_widget.pack(side='left')
     barra_scroll.config(command=lista_widget.yview)
-
+ 
     for frase in estado.lista_frases:
         lista_widget.insert(tk.END, frase)
-
+ 
     marco_frases = tk.Frame(pantalla, bg=COLOR_FONDO)
     marco_frases.pack(pady=4)
-
+ 
     variable_frase_nueva = tk.StringVar()
     crear_entrada(marco_frases, variable_frase_nueva, 14).pack(side='left', padx=6)
-
+ 
     def agregar_frase():
         frase_nueva = variable_frase_nueva.get().upper().strip()
-
+ 
         if not frase_nueva:
             return
-
+ 
         if len(frase_nueva) > 16:
             messagebox.showwarning(
                 'Demasiado larga',
-                f'Máximo 16 caracteres (tiene {len(frase_nueva)}).',
+                f'Maximo 16 caracteres (tiene {len(frase_nueva)}).',
                 parent=ventana,
             )
             return
-
+ 
         if frase_nueva not in estado.lista_frases:
             estado.lista_frases.append(frase_nueva)
             lista_widget.insert(tk.END, frase_nueva)
-
+ 
         variable_frase_nueva.set('')
-
+ 
     def quitar_frase():
         seleccion = lista_widget.curselection()
-
+ 
         if seleccion:
             frase_a_quitar = lista_widget.get(seleccion[0])
             estado.lista_frases.remove(frase_a_quitar)
             lista_widget.delete(seleccion[0])
-
+ 
     crear_boton(marco_frases, '+ Agregar', agregar_frase, 10).pack(side='left', padx=4)
     crear_boton(marco_frases, '- Quitar',  quitar_frase,  8, '#333333').pack(side='left')
-
+ 
     crear_separador(pantalla)
-
+ 
     marco_botones = tk.Frame(pantalla, bg=COLOR_FONDO)
     marco_botones.pack()
-
+ 
     def iniciar_partida():
         estado.nombre_jugador_a = variable_nombre_a.get().strip() or 'JUGADOR A'
         estado.nombre_jugador_b = variable_nombre_b.get().strip() or 'JUGADOR B'
@@ -226,301 +368,338 @@ def pantalla_configuracion():
         estado.puntos_jugador_a = 0
         estado.puntos_jugador_b = 0
         estado.ronda_actual     = 0
-
+        estado.frase_actual     = ''
         pantalla_juego()
-
-    crear_boton(marco_botones, 'INICIAR PARTIDA', iniciar_partida, 18).pack(side='left', padx=10)
-    crear_boton(marco_botones, 'Volver', pantalla_conexion, 12, '#333333').pack(side='left', padx=10)
-
-
+ 
+    crear_boton(
+        marco_botones, 'INICIAR PARTIDA', iniciar_partida, 18
+    ).pack(side='left', padx=10)
+ 
+    crear_boton(
+        marco_botones, 'Volver', pantalla_conexion, 12, '#333333'
+    ).pack(side='left', padx=10)
+ 
+ 
 # =========================================================
 # PANTALLA 3 — JUEGO
 # =========================================================
-
+ 
 def pantalla_juego():
-
+ 
     pantalla = _limpiar()
-
+ 
     # --- Cabecera ---
-    cabecera = tk.Frame(pantalla, bg=COLOR_FONDO_OSCURO)
-    cabecera.pack(fill='x', pady=(0, 10))
-
-    variable_titulo = tk.StringVar(value='TRANSMITIENDO')
-    crear_label_variable(
-        cabecera, variable_titulo, FUENTE_GRANDE, COLOR_ROJO
-    ).pack(side='left', padx=14, pady=8)
-
-    variable_ronda = tk.StringVar()
-    crear_label_variable(
-        cabecera, variable_ronda, FUENTE_NORMAL, COLOR_GRIS
-    ).pack(side='right', padx=14)
-
-    # --- Código Morse ---
-    crear_label(pantalla, 'Código Morse de la frase:', FUENTE_NORMAL, COLOR_GRIS).pack(anchor='w')
-    variable_codigo_morse = tk.StringVar()
-    crear_label_variable(
-        pantalla, variable_codigo_morse, FUENTE_GRANDE, COLOR_ROJO
-    ).pack(anchor='w', pady=4)
-
-    # --- Frase revelada al evaluar ---
-    variable_frase_revelada = tk.StringVar()
-    crear_label_variable(
-        pantalla, variable_frase_revelada, FUENTE_GRANDE, COLOR_TEXTO
-    ).pack(anchor='w', pady=2)
-
+    cab = tk.Frame(pantalla, bg=COLOR_FONDO_OSCURO)
+    cab.pack(fill='x', pady=(0, 8))
+    var_titulo = tk.StringVar()
+    crear_label_variable(cab, var_titulo, FUENTE_GRANDE, COLOR_ROJO).pack(side='left', padx=14, pady=8)
+    var_ronda = tk.StringVar()
+    crear_label_variable(cab, var_ronda, FUENTE_NORMAL, COLOR_GRIS).pack(side='right', padx=14)
+ 
+    # --- Morse de la frase + timer ---
+    fila = tk.Frame(pantalla, bg=COLOR_FONDO)
+    fila.pack(fill='x', padx=4)
+    var_morse = tk.StringVar()
+    crear_label_variable(fila, var_morse, FUENTE_NORMAL, COLOR_ROJO).pack(side='left')
+    var_timer = tk.StringVar()
+    crear_label_variable(fila, var_timer, FUENTE_GRANDE, COLOR_VERDE).pack(side='right', padx=14)
+ 
+    # --- Instruccion ---
+    var_instruccion = tk.StringVar()
+    crear_label_variable(pantalla, var_instruccion, FUENTE_NORMAL, COLOR_GRIS).pack(anchor='w', padx=4, pady=4)
+ 
     crear_separador(pantalla)
-
-    # --- Instrucción e input jugador A ---
-    variable_instruccion = tk.StringVar()
-    crear_label_variable(
-        pantalla, variable_instruccion, FUENTE_NORMAL, COLOR_GRIS
-    ).pack(anchor='w')
-
-    marco_input = tk.Frame(pantalla, bg=COLOR_FONDO)
-    marco_input.pack(anchor='w', pady=8)
-
-    variable_respuesta_a = tk.StringVar()
-    campo_respuesta = crear_entrada(marco_input, variable_respuesta_a, 22)
-    campo_respuesta.pack(side='left', padx=(0, 12))
-
-    def al_confirmar_jugador_a(evento=None):
-
-        texto_ingresado = variable_respuesta_a.get().strip()
-
-        if not texto_ingresado:
-            messagebox.showwarning('Campo vacío', 'Escribe algo primero.', parent=ventana)
-            return
-
-        if estado.modo_juego == 1:
-            # Modo simple: solo compite el jugador A
-            evaluar_ronda(texto_ingresado, '')
-
-        elif estado.turno_actual == 'A':
-            # Guardar respuesta A y esperar la de B
-            estado.respuesta_guardada_a = texto_ingresado
-            estado.turno_actual         = 'B'
-
-            variable_titulo.set(f'TURNO DE {estado.nombre_jugador_b} — botón físico')
-            variable_instruccion.set(
-                f'Esperando que {estado.nombre_jugador_b} ingrese su respuesta con el botón...'
-            )
-            variable_estado_b.set(f'{estado.nombre_jugador_b} usa el botón de la maqueta')
-
-            boton_confirmar.config(state='disabled')
-            campo_respuesta.config(state='disabled')
-
-            # Escuchar en segundo plano la respuesta de la Raspberry
-            hilo_espera = threading.Thread(
-                target=_esperar_respuesta_jugador_b,
-                daemon=True,
-            )
-            hilo_espera.start()
-
-    campo_respuesta.bind('<Return>', al_confirmar_jugador_a)
-
-    boton_confirmar = crear_boton(marco_input, 'CONFIRMAR', al_confirmar_jugador_a, 14)
-    boton_confirmar.pack(side='left')
-
-    # --- Estado del jugador B ---
-    variable_estado_b = tk.StringVar()
-    crear_label_variable(
-        pantalla, variable_estado_b, FUENTE_NORMAL, COLOR_ROJO
-    ).pack(anchor='w', pady=4)
-
+ 
+    # --- Modo 1: campo de texto normal ---
+    zona_m1 = tk.Frame(pantalla, bg=COLOR_FONDO)
+    zona_m1.pack(fill='x', padx=4)
+    var_nombre_a = tk.StringVar()
+    crear_label_variable(zona_m1, var_nombre_a, FUENTE_NORMAL, COLOR_GRIS).pack(anchor='w')
+    var_respuesta = tk.StringVar()
+    campo_respuesta = crear_entrada(zona_m1, var_respuesta, 32)
+    campo_respuesta.pack(anchor='w', pady=4)
+    crear_label(zona_m1, 'Escribe la frase y presiona Enter', FUENTE_NORMAL, COLOR_GRIS).pack(anchor='w')
+ 
+    # --- Modo 2: entrada morse con tecla K ---
+    zona_m2 = tk.Frame(pantalla, bg=COLOR_FONDO)
+    zona_m2.pack(fill='x', padx=4)
+    var_nombre_pc = tk.StringVar()
+    crear_label_variable(zona_m2, var_nombre_pc, FUENTE_NORMAL, COLOR_GRIS).pack(anchor='w')
+    var_impulso = tk.StringVar()
+    crear_label_variable(zona_m2, var_impulso, FUENTE_GRANDE, COLOR_ROJO).pack(anchor='w')
+    var_texto_pc = tk.StringVar()
+    crear_label_variable(zona_m2, var_texto_pc, FUENTE_GRANDE, COLOR_TEXTO).pack(anchor='w', pady=(0, 2))
+    crear_label(zona_m2, 'Toca K = punto  |  mantén K = raya', FUENTE_NORMAL, COLOR_GRIS).pack(anchor='w')
+ 
     crear_separador(pantalla)
-
+ 
+    # --- Modo 2: estado del jugador en el boton fisico ---
+    var_nombre_boton = tk.StringVar()
+    crear_label_variable(pantalla, var_nombre_boton, FUENTE_NORMAL, COLOR_GRIS).pack(anchor='w', padx=4)
+    var_estado_boton = tk.StringVar()
+    crear_label_variable(pantalla, var_estado_boton, FUENTE_NORMAL, COLOR_ROJO).pack(anchor='w', padx=4)
+ 
+    crear_separador(pantalla)
+ 
     # --- Marcador ---
-    marco_puntajes = tk.Frame(pantalla, bg=COLOR_FONDO)
-    marco_puntajes.pack(fill='x')
-
-    variable_puntos_a = tk.StringVar()
-    variable_puntos_b = tk.StringVar()
-
-    crear_label_variable(
-        marco_puntajes, variable_puntos_a, FUENTE_MEDIANA, COLOR_VERDE
-    ).pack(side='left', padx=14)
-
-    crear_label_variable(
-        marco_puntajes, variable_puntos_b, FUENTE_MEDIANA, COLOR_VERDE
-    ).pack(side='right', padx=14)
-
-    # ----------------------------------------------------------
-    # Funciones internas de la pantalla de juego
-    # ----------------------------------------------------------
-
+    marc = tk.Frame(pantalla, bg=COLOR_FONDO)
+    marc.pack(fill='x')
+    var_pts_a = tk.StringVar()
+    var_pts_b = tk.StringVar()
+    crear_label_variable(marc, var_pts_a, FUENTE_MEDIANA, COLOR_VERDE).pack(side='left', padx=14)
+    crear_label_variable(marc, var_pts_b, FUENTE_MEDIANA, COLOR_VERDE).pack(side='right', padx=14)
+ 
+    # ==========================================================
+    # HELPERS
+    # ==========================================================
+ 
     def actualizar_marcador():
-        variable_puntos_a.set(f'{estado.nombre_jugador_a}: {estado.puntos_jugador_a} pts')
-        variable_puntos_b.set(f'{estado.nombre_jugador_b}: {estado.puntos_jugador_b} pts')
-
-    def nueva_ronda():
-        estado.ronda_actual += 1
-
-        # Elegir frase sin repetir la anterior
-        candidatas = [f for f in estado.lista_frases if f != estado.frase_actual]
-
-        if not candidatas:
-            candidatas = estado.lista_frases
-
-        estado.frase_actual          = random.choice(candidatas).upper()
-        estado.turno_actual          = 'A'
-        estado.respuesta_guardada_a  = ''
-
-        variable_ronda.set(f'Ronda {estado.ronda_actual}/{MAXIMAS_RONDAS}')
-        variable_titulo.set('TRANSMITIENDO')
-        variable_codigo_morse.set(texto_a_morse(estado.frase_actual))
-        variable_frase_revelada.set('')
-        variable_respuesta_a.set('')
-        variable_estado_b.set('')
-        variable_instruccion.set(
-            f'{estado.nombre_jugador_a} — escribe la frase que descifraste:'
-        )
-
-        boton_confirmar.config(state='normal')
-        campo_respuesta.config(state='normal')
-
-        actualizar_marcador()
-        campo_respuesta.focus()
-
-        # Enviar la frase a la Raspberry para que la transmita
-        if estado.ip_raspberry:
-            enviar_a_raspberry(estado.ip_raspberry, 'ambos', estado.frase_actual, 200)
-
-    def evaluar_ronda(respuesta_a, respuesta_b):
-
-        correctas_a, total_letras, porcentaje_a = calcular_puntaje(estado.frase_actual, respuesta_a)
-        ganadas_a = porcentaje_a * estado.nivel_juego
-        estado.puntos_jugador_a += ganadas_a
-
-        variable_frase_revelada.set(f'Frase correcta: {estado.frase_actual}')
-
-        mensaje_resultado = (
-            f'Frase correcta: {estado.frase_actual}\n\n'
-            f'{estado.nombre_jugador_a}: {correctas_a}/{total_letras} '
-            f'correctas ({porcentaje_a}%)  →  +{ganadas_a} pts'
-        )
-
-        if respuesta_b:
-            correctas_b, _, porcentaje_b = calcular_puntaje(estado.frase_actual, respuesta_b)
-            ganadas_b = porcentaje_b * estado.nivel_juego
-            estado.puntos_jugador_b += ganadas_b
-            mensaje_resultado += (
-                f'\n{estado.nombre_jugador_b}: {correctas_b}/{total_letras} '
-                f'correctas ({porcentaje_b}%)  →  +{ganadas_b} pts'
-            )
-
-        actualizar_marcador()
-
-        if estado.ronda_actual >= MAXIMAS_RONDAS:
-            messagebox.showinfo('Resultado final', mensaje_resultado, parent=ventana)
-            terminar_partida()
+        var_pts_a.set(f'{estado.nombre_jugador_a}: {estado.puntos_jugador_a} pts')
+        var_pts_b.set(f'{estado.nombre_jugador_b}: {estado.puntos_jugador_b} pts')
+ 
+    def mostrar_zona(modo1_visible):
+        if modo1_visible:
+            zona_m1.pack(fill='x', padx=4)
+            zona_m2.pack_forget()
         else:
-            messagebox.showinfo(f'Ronda {estado.ronda_actual}', mensaje_resultado, parent=ventana)
-            nueva_ronda()
-
-    def _esperar_respuesta_jugador_b():
-        """
-        Hilo de espera: hace polling cada 500 ms sobre
-        estado.respuesta_jugador_b (que actualiza red.py).
-        Tiempo máximo de espera: 120 segundos.
-        """
-        estado.respuesta_jugador_b = ''   # limpiar antes de esperar
-
-        tiempo_limite  = 120
-        intervalo      = 0.5
-        tiempo_pasado  = 0
-
-        while tiempo_pasado < tiempo_limite:
-            if estado.respuesta_jugador_b != '':
-                respuesta_capturada = estado.respuesta_jugador_b
-                # Volver al hilo principal de Tkinter para actualizar la UI
-                ventana.after(0, lambda r=respuesta_capturada: _procesar_respuesta_b(r))
-                return
-            time.sleep(intervalo)
-            tiempo_pasado += intervalo
-
-        # Tiempo agotado
-        ventana.after(
-            0,
-            lambda: variable_estado_b.set('Tiempo agotado — sin respuesta del botón')
-        )
-
-    def _procesar_respuesta_b(respuesta):
-        """Se ejecuta en el hilo principal al recibir la respuesta de B."""
-        variable_estado_b.set(f'{estado.nombre_jugador_b} respondió: {respuesta}')
-        evaluar_ronda(estado.respuesta_guardada_a, respuesta)
-
-    def terminar_partida():
-
-        if estado.puntos_jugador_a >= estado.puntos_jugador_b:
-            ganador = estado.nombre_jugador_a
+            zona_m1.pack_forget()
+            zona_m2.pack(fill='x', padx=4)
+ 
+    def activar_tecla_k():
+        pantalla.focus_set()
+        pantalla.bind('<KeyPress-k>',   lambda e: _morse_key_press(e, var_impulso))
+        pantalla.bind('<KeyRelease-k>', lambda e: _morse_key_release(e, var_impulso, var_texto_pc))
+ 
+    def desactivar_tecla_k():
+        pantalla.unbind('<KeyPress-k>')
+        pantalla.unbind('<KeyRelease-k>')
+ 
+    def obtener_texto_pc():
+        if estado.codigo_morse_en_curso:
+            estado.texto_morse_acumulado += MORSE_INVERSO.get(estado.codigo_morse_en_curso, '?')
+            estado.codigo_morse_en_curso  = ''
+        return estado.texto_morse_acumulado.strip().upper()
+ 
+    def evaluar(respuesta, jugador):
+        correctas, total, pct = calcular_puntaje(estado.frase_actual, respuesta)
+        pts = pct * estado.ronda_actual
+        if jugador == 'A':
+            estado.puntos_jugador_a += pts
+            nombre = estado.nombre_jugador_a
         else:
-            ganador = estado.nombre_jugador_b
-
-        posicion_a = top10_agregar_entrada(
-            estado.nombre_jugador_a, estado.puntos_jugador_a, f'Modo{estado.modo_juego}'
-        )
-        posicion_b = top10_agregar_entrada(
-            estado.nombre_jugador_b, estado.puntos_jugador_b, f'Modo{estado.modo_juego}'
-        )
-
-        mensaje_final = (
-            f'GANADOR: {ganador}\n\n'
-            f'{estado.nombre_jugador_a}: {estado.puntos_jugador_a} pts'
-        )
-
-        if posicion_a:
-            mensaje_final += f'  (Top 10 #{posicion_a})'
-
-        mensaje_final += f'\n{estado.nombre_jugador_b}: {estado.puntos_jugador_b} pts'
-
-        if posicion_b:
-            mensaje_final += f'  (Top 10 #{posicion_b})'
-
-        messagebox.showinfo('Partida finalizada', mensaje_final, parent=ventana)
+            estado.puntos_jugador_b += pts
+            nombre = estado.nombre_jugador_b
+        actualizar_marcador()
+        return f'{nombre}: "{respuesta}" -> {correctas}/{total} ({pct}%) +{pts}pts'
+ 
+    def fin_partida():
+        ganador = estado.nombre_jugador_a if estado.puntos_jugador_a >= estado.puntos_jugador_b else estado.nombre_jugador_b
+        p_a = top10_agregar_entrada(estado.nombre_jugador_a, estado.puntos_jugador_a, f'Modo{estado.modo_juego}')
+        p_b = top10_agregar_entrada(estado.nombre_jugador_b, estado.puntos_jugador_b, f'Modo{estado.modo_juego}')
+        msg = f'GANADOR: {ganador}\n\n{estado.nombre_jugador_a}: {estado.puntos_jugador_a} pts'
+        if p_a: msg += f'  (Top10 #{p_a})'
+        msg += f'\n{estado.nombre_jugador_b}: {estado.puntos_jugador_b} pts'
+        if p_b: msg += f'  (Top10 #{p_b})'
+        messagebox.showinfo('Partida finalizada', msg, parent=ventana)
         pantalla_configuracion()
-
-    # Arrancar la primera ronda
-    nueva_ronda()
-
-
+ 
+    def transmitir(velocidad):
+        if estado.ip_raspberry:
+            threading.Thread(
+                target=enviar_a_raspberry,
+                args=(estado.ip_raspberry, 'ok', velocidad),
+                daemon=True,
+            ).start()
+ 
+    # ==========================================================
+    # MODO 1 — el jugador escribe la frase en texto normal
+    # ==========================================================
+ 
+    def ronda_modo1():
+        estado.ronda_actual += 1
+        candidatas = [f for f in estado.lista_frases if f != estado.frase_actual] or estado.lista_frases
+        estado.frase_actual = random.choice(candidatas).upper()
+        velocidad = estado.VELOCIDADES_POR_RONDA.get(estado.ronda_actual, 200)
+ 
+        var_ronda.set(f'Ronda {estado.ronda_actual}/{MAXIMAS_RONDAS}')
+        var_titulo.set('Escucha y mira la maqueta')
+        var_morse.set(texto_a_morse(estado.frase_actual))
+        var_instruccion.set('Observa/escucha la maqueta y escribe la frase que recibiste.')
+        var_nombre_a.set(estado.nombre_jugador_a)
+        var_respuesta.set('')
+        mostrar_zona(True)
+        actualizar_marcador()
+        transmitir(velocidad)
+ 
+        campo_respuesta.bind('<Return>', lambda e: confirmar_modo1())
+        campo_respuesta.focus_set()
+        _iniciar_cuenta_regresiva(var_timer, fin_modo1)
+ 
+    def confirmar_modo1():
+        _cancelar_timer()
+        fin_modo1()
+ 
+    def fin_modo1():
+        campo_respuesta.unbind('<Return>')
+        resultado = evaluar(var_respuesta.get().strip().upper(), 'A')
+        msg = f'Frase correcta: {estado.frase_actual}\n\n{resultado}'
+        if estado.ronda_actual >= MAXIMAS_RONDAS:
+            messagebox.showinfo('Resultado final', msg, parent=ventana)
+            fin_partida()
+        else:
+            messagebox.showinfo(f'Ronda {estado.ronda_actual}', msg, parent=ventana)
+            ronda_modo1()
+ 
+    # ==========================================================
+    # MODO 2 — A en PC (tecla K), B en boton fisico; luego se invierten
+    # ==========================================================
+ 
+    def ronda_modo2():
+        estado.ronda_actual += 1
+        candidatas = [f for f in estado.lista_frases if f != estado.frase_actual] or estado.lista_frases
+        estado.frase_actual = random.choice(candidatas).upper()
+        turno1_modo2()
+ 
+    def turno1_modo2():
+        # A: tecla K en PC  |  B: boton fisico (ACTIVAR_MORSE)
+        estado.respuesta_jugador_b = ''
+        velocidad = estado.VELOCIDADES_POR_RONDA.get(estado.ronda_actual, 200)
+ 
+        var_ronda.set(f'Ronda {estado.ronda_actual}/{MAXIMAS_RONDAS}  — Turno 1/2')
+        var_titulo.set('Escucha el morse — responde en codigo')
+        var_morse.set(texto_a_morse(estado.frase_actual))
+        var_instruccion.set('La Raspberry transmite la frase. Ambos responden en morse.')
+        var_nombre_pc.set(f'{estado.nombre_jugador_a}  — tecla K')
+        var_nombre_boton.set(f'{estado.nombre_jugador_b}  — boton fisico')
+        var_estado_boton.set('Activando morse en la maqueta...')
+ 
+        mostrar_zona(False)
+        _resetear_morse_pc(var_impulso, var_texto_pc)
+        actualizar_marcador()
+        activar_tecla_k()
+        transmitir(velocidad)
+ 
+        def activar_b():
+            res = enviar_a_raspberry(estado.ip_raspberry, 'ACTIVAR_MORSE') if estado.ip_raspberry else ''
+            estado.respuesta_jugador_b = res
+            var_estado_boton.set(f'{estado.nombre_jugador_b}: "{res or "(sin respuesta)"}"')
+ 
+        threading.Thread(target=activar_b, daemon=True).start()
+        _iniciar_cuenta_regresiva(var_timer, fin_turno1_modo2)
+ 
+    def fin_turno1_modo2():
+        desactivar_tecla_k()
+        resp_a = obtener_texto_pc()
+        resp_b = estado.respuesta_jugador_b.strip().upper()
+        sin_resp = '(sin respuesta)'
+        resumen = (
+            f'{estado.nombre_jugador_a}: "{resp_a or sin_resp}"\n'
+            f'{estado.nombre_jugador_b}: "{resp_b or sin_resp}"'
+        )
+        messagebox.showinfo('Turno 1 terminado', resumen, parent=ventana)
+        # Guardar para evaluar al final del turno 2
+        estado.respuesta_morse_a_turno1 = resp_a
+        estado.respuesta_morse_b_turno1 = resp_b
+        turno2_modo2()
+ 
+    def turno2_modo2():
+        # A: boton fisico (ACTIVAR_MORSE)  |  B: tecla K en PC
+        estado.respuesta_jugador_b = ''
+        velocidad = estado.VELOCIDADES_POR_RONDA.get(estado.ronda_actual, 200)
+ 
+        var_ronda.set(f'Ronda {estado.ronda_actual}/{MAXIMAS_RONDAS}  — Turno 2/2 (roles invertidos)')
+        var_titulo.set('Roles invertidos — misma frase')
+        var_morse.set(texto_a_morse(estado.frase_actual))
+        var_instruccion.set('Ahora los roles se invierten con la misma frase.')
+        var_nombre_pc.set(f'{estado.nombre_jugador_b}  — tecla K')
+        var_nombre_boton.set(f'{estado.nombre_jugador_a}  — boton fisico')
+        var_estado_boton.set('Activando morse en la maqueta...')
+ 
+        _resetear_morse_pc(var_impulso, var_texto_pc)
+        actualizar_marcador()
+        activar_tecla_k()
+        transmitir(velocidad)
+ 
+        def activar_a():
+            res = enviar_a_raspberry(estado.ip_raspberry, 'ACTIVAR_MORSE') if estado.ip_raspberry else ''
+            estado.respuesta_jugador_b = res
+            var_estado_boton.set(f'{estado.nombre_jugador_a}: "{res or "(sin respuesta)"}"')
+ 
+        threading.Thread(target=activar_a, daemon=True).start()
+        _iniciar_cuenta_regresiva(var_timer, fin_turno2_modo2)
+ 
+    def fin_turno2_modo2():
+        desactivar_tecla_k()
+        # En turno 2: B estaba en PC, A en el boton
+        resp_b2 = obtener_texto_pc()
+        resp_a2 = estado.respuesta_jugador_b.strip().upper()
+ 
+        r_a1 = evaluar(estado.respuesta_morse_a_turno1, 'A')
+        r_b1 = evaluar(estado.respuesta_morse_b_turno1, 'B')
+        r_a2 = evaluar(resp_a2, 'A')
+        r_b2 = evaluar(resp_b2, 'B')
+ 
+        ganador = estado.nombre_jugador_a if estado.puntos_jugador_a > estado.puntos_jugador_b else (
+                  estado.nombre_jugador_b if estado.puntos_jugador_b > estado.puntos_jugador_a else 'Empate')
+ 
+        msg = (f'Frase: {estado.frase_actual}\n\n'
+               f'Turno 1:\n{r_a1}\n{r_b1}\n\n'
+               f'Turno 2:\n{r_a2}\n{r_b2}\n\n'
+               f'Ganador de la ronda: {ganador}')
+ 
+        if estado.ronda_actual >= MAXIMAS_RONDAS:
+            messagebox.showinfo('Resultado final', msg, parent=ventana)
+            fin_partida()
+        else:
+            messagebox.showinfo(f'Ronda {estado.ronda_actual}', msg, parent=ventana)
+            ronda_modo2()
+ 
+    # --- Arranque ---
+    if estado.modo_juego == 1:
+        ronda_modo1()
+    else:
+        ronda_modo2()
+ 
+ 
 # =========================================================
 # PANTALLA 4 — TOP 10
 # =========================================================
-
+ 
 def pantalla_top10(volver=None):
-
+ 
     if volver is None:
         volver = pantalla_configuracion
-
+ 
     pantalla = _limpiar()
-
+ 
     crear_label(pantalla, 'TOP 10', FUENTE_TITULO, COLOR_ROJO).pack(pady=(0, 14))
-
+ 
     tabla = tk.Frame(pantalla, bg=COLOR_FONDO)
     tabla.pack()
-
+ 
     encabezados = ['#',  'Nombre', 'Puntos', 'Modo', 'Fecha']
     anchos      = [3,    14,       8,         10,     10     ]
-
+ 
     for columna, (titulo, ancho) in enumerate(zip(encabezados, anchos)):
-        crear_label(tabla, titulo, FUENTE_NORMAL, COLOR_ROJO, width=ancho, anchor='w').grid(
-            row=0, column=columna, padx=6, pady=4)
-
+        crear_label(
+            tabla, titulo, FUENTE_NORMAL, COLOR_ROJO, width=ancho, anchor='w'
+        ).grid(row=0, column=columna, padx=6, pady=4)
+ 
     datos = top10_cargar()
-
+ 
     if not datos:
         crear_label(
-            tabla, 'Todavía no hay puntajes guardados.', FUENTE_NORMAL, COLOR_GRIS
+            tabla, 'Todavia no hay puntajes guardados.', FUENTE_NORMAL, COLOR_GRIS
         ).grid(row=1, column=0, columnspan=5, pady=20)
-
+ 
     else:
         for posicion, entrada in enumerate(datos, 1):
-
+ 
             if posicion <= 3:
                 color_fila = COLOR_ROJO
             else:
                 color_fila = COLOR_TEXTO
-
+ 
             valores = [
                 str(posicion),
                 entrada.get('nombre', ''),
@@ -528,24 +707,29 @@ def pantalla_top10(volver=None):
                 entrada.get('modo',   ''),
                 entrada.get('fecha',  ''),
             ]
-
+ 
             for columna, (valor, ancho) in enumerate(zip(valores, anchos)):
                 crear_label(
                     tabla, valor, FUENTE_NORMAL, color_fila, width=ancho, anchor='w'
                 ).grid(row=posicion, column=columna, padx=6, pady=2)
-
+ 
     crear_separador(pantalla)
-
+ 
     marco_botones = tk.Frame(pantalla, bg=COLOR_FONDO)
     marco_botones.pack()
-
+ 
     def borrar_top10():
         confirmar = messagebox.askyesno(
-            'Confirmar', '¿Borrar toda la tabla del Top 10?', parent=ventana
+            'Confirmar', 'Borrar toda la tabla del Top 10?', parent=ventana
         )
         if confirmar:
             top10_guardar([])
             pantalla_top10(volver=volver)
-
-    crear_boton(marco_botones, 'Volver', volver, 12, '#333333').pack(side='left', padx=10)
-    crear_boton(marco_botones, 'Borrar tabla', borrar_top10, 14, '#331111').pack(side='left', padx=10)
+ 
+    crear_boton(
+        marco_botones, 'Volver', volver, 12, '#333333'
+    ).pack(side='left', padx=10)
+ 
+    crear_boton(
+        marco_botones, 'Borrar tabla', borrar_top10, 14, '#331111'
+    ).pack(side='left', padx=10)

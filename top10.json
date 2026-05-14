@@ -1,0 +1,26 @@
+[
+  {
+    "nombre": "KEVIN",
+    "puntos": 500,
+    "modo": "Modo1",
+    "fecha": "13/05/26"
+  },
+  {
+    "nombre": "KEVIN",
+    "puntos": 297,
+    "modo": "Modo2",
+    "fecha": "13/05/26"
+  },
+  {
+    "nombre": "GONGO",
+    "puntos": 198,
+    "modo": "Modo2",
+    "fecha": "13/05/26"
+  },
+  {
+    "nombre": "GONGO",
+    "puntos": 0,
+    "modo": "Modo1",
+    "fecha": "13/05/26"
+  }
+]
