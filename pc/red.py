@@ -8,10 +8,8 @@
 # =========================================================
 
 import socket
-import threading
-
 import estado
-from constantes import PUERTO_RASPBERRY, PUERTO_ESCUCHA_PC
+from constantes import PUERTO_RASPBERRY
 
 
 # ---------------------------------------------------------
@@ -21,7 +19,7 @@ from constantes import PUERTO_RASPBERRY, PUERTO_ESCUCHA_PC
 # ---------------------------------------------------------
 
 def enviar_a_raspberry(ip, modo, velocidad=None):
-    
+
     try:
         cliente = socket.socket()
  
@@ -30,7 +28,7 @@ def enviar_a_raspberry(ip, modo, velocidad=None):
             cliente.settimeout(25)
             mensaje = 'ACTIVAR_MORSE'
         else:
-            cliente.settimeout(5)
+            cliente.settimeout(60)
             mensaje = f"{modo}|{estado.frase_actual}|{velocidad}"
  
         cliente.connect((ip, PUERTO_RASPBERRY))

@@ -8,6 +8,9 @@ from tkinter import messagebox
 import random
 import time
 import threading
+from PIL import Image, ImageTk
+import os
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
  
 import estado
 from constantes import (
@@ -60,11 +63,6 @@ def _cancelar_timer():
  
  
 def _iniciar_cuenta_regresiva(variable_timer, callback_fin):
-    """
-    Arranca la cuenta regresiva de SEGUNDOS_POR_RONDA segundos.
-    Actualiza variable_timer cada segundo.
-    Al llegar a 0 llama a callback_fin().
-    """
     estado.segundos_restantes = estado.SEGUNDOS_POR_RONDA
     estado.timer_activo       = True
  
@@ -219,7 +217,7 @@ def pantalla_conexion():
  
         variable_estado_conexion.set('Conectando...')
         ventana.update()
- 
+        estado.frase_actual = "Funda"
         conexion_exitosa = enviar_a_raspberry(ip_ingresada, 'ok', 200)
  
         if conexion_exitosa:
@@ -387,7 +385,17 @@ def pantalla_configuracion():
 def pantalla_juego():
  
     pantalla = _limpiar()
- 
+    
+    try:
+        pil_img = Image.open(os.path.join(BASE_DIR, 'morse.png')).resize((400, 230))  # ancho x alto en px
+        img_morse = ImageTk.PhotoImage(pil_img)
+        lbl_imagen = tk.Label(pantalla, image=img_morse, bg=COLOR_FONDO)
+        lbl_imagen.image = img_morse
+        lbl_imagen.pack(side='bottom', anchor='center', pady=(0, 0))
+    except Exception:
+        pass
+    
+
     # --- Cabecera ---
     cab = tk.Frame(pantalla, bg=COLOR_FONDO_OSCURO)
     cab.pack(fill='x', pady=(0, 8))
@@ -527,17 +535,14 @@ def pantalla_juego():
         var_instruccion.set('Observa/escucha la maqueta y escribe la frase que recibiste.')
         var_nombre_a.set(estado.nombre_jugador_a)
         var_respuesta.set('')
+        var_timer.set('')
         mostrar_zona(True)
         actualizar_marcador()
         transmitir(velocidad)
  
-        campo_respuesta.bind('<Return>', lambda e: confirmar_modo1())
+        campo_respuesta.bind('<Return>', lambda e: fin_modo1())
         campo_respuesta.focus_set()
-        _iniciar_cuenta_regresiva(var_timer, fin_modo1)
- 
-    def confirmar_modo1():
-        _cancelar_timer()
-        fin_modo1()
+
  
     def fin_modo1():
         campo_respuesta.unbind('<Return>')
@@ -576,16 +581,28 @@ def pantalla_juego():
         mostrar_zona(False)
         _resetear_morse_pc(var_impulso, var_texto_pc)
         actualizar_marcador()
-        activar_tecla_k()
-        transmitir(velocidad)
- 
-        def activar_b():
-            res = enviar_a_raspberry(estado.ip_raspberry, 'ACTIVAR_MORSE') if estado.ip_raspberry else ''
-            estado.respuesta_jugador_b = res
-            var_estado_boton.set(f'{estado.nombre_jugador_b}: "{res or "(sin respuesta)"}"')
- 
-        threading.Thread(target=activar_b, daemon=True).start()
-        _iniciar_cuenta_regresiva(var_timer, fin_turno1_modo2)
+        def transmitir_y_arrancar():
+            # Bloquea hasta que la Raspberry termina de transmitir
+            if estado.ip_raspberry:
+                enviar_a_raspberry(estado.ip_raspberry, 'ok', velocidad)
+
+            # Vuelta al hilo principal para activar la K y el timer
+            ventana.after(0, _post_transmision_turno1)
+
+        def _post_transmision_turno1():
+            activar_tecla_k()
+            var_estado_boton.set('Activando morse en la maqueta...')
+
+            def activar_b():
+                res = enviar_a_raspberry(estado.ip_raspberry, 'ACTIVAR_MORSE') if estado.ip_raspberry else ''
+                estado.respuesta_jugador_b = res
+                ventana.after(0, lambda: var_estado_boton.set(
+                    f'{estado.nombre_jugador_b}: "{res or "(sin respuesta)"}"'))
+
+            threading.Thread(target=activar_b, daemon=True).start()
+            _iniciar_cuenta_regresiva(var_timer, fin_turno1_modo2)
+
+        threading.Thread(target=transmitir_y_arrancar, daemon=True).start()
  
     def fin_turno1_modo2():
         desactivar_tecla_k()
@@ -617,16 +634,26 @@ def pantalla_juego():
  
         _resetear_morse_pc(var_impulso, var_texto_pc)
         actualizar_marcador()
-        activar_tecla_k()
-        transmitir(velocidad)
- 
-        def activar_a():
-            res = enviar_a_raspberry(estado.ip_raspberry, 'ACTIVAR_MORSE') if estado.ip_raspberry else ''
-            estado.respuesta_jugador_b = res
-            var_estado_boton.set(f'{estado.nombre_jugador_a}: "{res or "(sin respuesta)"}"')
- 
-        threading.Thread(target=activar_a, daemon=True).start()
-        _iniciar_cuenta_regresiva(var_timer, fin_turno2_modo2)
+
+        def transmitir_y_arrancar():
+            if estado.ip_raspberry:
+                enviar_a_raspberry(estado.ip_raspberry, 'ok', velocidad)
+            ventana.after(0, _post_transmision_turno2)
+
+        def _post_transmision_turno2():
+            activar_tecla_k()
+            var_estado_boton.set('Activando morse en la maqueta...')
+
+            def activar_a():
+                res = enviar_a_raspberry(estado.ip_raspberry, 'ACTIVAR_MORSE') if estado.ip_raspberry else ''
+                estado.respuesta_jugador_b = res
+                ventana.after(0, lambda: var_estado_boton.set(
+                    f'{estado.nombre_jugador_a}: "{res or "(sin respuesta)"}"'))
+
+            threading.Thread(target=activar_a, daemon=True).start()
+            _iniciar_cuenta_regresiva(var_timer, fin_turno2_modo2)
+
+        threading.Thread(target=transmitir_y_arrancar, daemon=True).start()
  
     def fin_turno2_modo2():
         desactivar_tecla_k()

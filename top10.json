@@ -1,5 +1,17 @@
 [
   {
+    "nombre": "JUGADOR A",
+    "puntos": 600,
+    "modo": "Modo1",
+    "fecha": "14/05/26"
+  },
+  {
+    "nombre": "JUGADOR A",
+    "puntos": 600,
+    "modo": "Modo1",
+    "fecha": "14/05/26"
+  },
+  {
     "nombre": "KEVIN",
     "puntos": 500,
     "modo": "Modo1",
@@ -22,5 +34,17 @@
     "puntos": 0,
     "modo": "Modo1",
     "fecha": "13/05/26"
+  },
+  {
+    "nombre": "JUGADOR B",
+    "puntos": 0,
+    "modo": "Modo1",
+    "fecha": "14/05/26"
+  },
+  {
+    "nombre": "JUGADOR B",
+    "puntos": 0,
+    "modo": "Modo1",
+    "fecha": "14/05/26"
   }
 ]

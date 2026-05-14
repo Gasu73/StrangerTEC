@@ -4,12 +4,12 @@ import network
 import socket
  
  
-# =========================================================
+
 # WIFI
-# =========================================================
+
  
-SSID     = "AP_50196"
-PASSWORD = "ivonne2023"
+SSID     = "KevinNet"
+PASSWORD = "12345678"
  
 wifi = network.WLAN(network.STA_IF)
 wifi.active(True)
@@ -24,20 +24,16 @@ direccion_ip = wifi.ifconfig()[0]
 print("IP:", direccion_ip)
  
  
-# =========================================================
-# SERVIDOR SOCKET — modo no bloqueante
-# =========================================================
  
 servidor = socket.socket()
-servidor.bind((direccion_ip, 5000))
-servidor.listen(1)    # sin esto leer_wifi() bloquea el loop entero
+servidor.bind(("0.0.0.0", 5000))
+servidor.listen(1)    
  
 print("Esperando conexiones en", direccion_ip, ":5000")
  
  
-# =========================================================
-# MAPA DE CARACTERES  (fila, columna en el display)
-# =========================================================
+
+# MAPA DE CARACTERES  (fila, columna)
  
 mapa_caracteres = {
     # FILA 2
@@ -56,10 +52,10 @@ mapa_caracteres = {
     '8': (0, 11), '9': (0, 12), '-': (0, 13), '+': (0, 14),
 }
  
- 
-# =========================================================
+
+
 # TABLA MORSE  código -> letra
-# =========================================================
+
  
 MORSE = {
     ".-":   "A", "-...": "B", "-.-.": "C", "-..":  "D",
@@ -78,9 +74,8 @@ MORSE = {
 }
  
  
-# =========================================================
+
 # TABLA TEXTO -> MORSE  letra -> código
-# =========================================================
  
 TEXTO_A_MORSE = {
     "A": ".-",   "B": "-...", "C": "-.-.", "D": "-..",
@@ -98,9 +93,8 @@ TEXTO_A_MORSE = {
 }
  
  
-# =========================================================
+
 # PARÁMETROS DE MORSE
-# =========================================================
  
 UNIDAD_MS = 200
  
@@ -109,11 +103,10 @@ DURACION_RAYA  = UNIDAD_MS * 3
  
 PAUSA_IMPULSOS = UNIDAD_MS
 PAUSA_LETRAS   = UNIDAD_MS * 3
+
+ESPACIO_PALABRAS = UNIDAD_MS * 7
  
  
-# =========================================================
-# ESTADO DEL DECODIFICADOR MORSE (botón físico)
-# =========================================================
  
 codigo_actual     = ""
 mensaje_morse     = ""
@@ -121,9 +114,8 @@ tiempo_inicio_btn = 0
 ultimo_evento_ms  = time.ticks_ms()
  
  
-# =========================================================
+
 # PINES
-# =========================================================
  
 AB1  = machine.Pin(14, machine.Pin.OUT)
 CLK1 = machine.Pin(15, machine.Pin.OUT)
@@ -138,7 +130,7 @@ dip_leds = machine.Pin(2, machine.Pin.IN, machine.Pin.PULL_UP)
 dip_buzzer = machine.Pin(3, machine.Pin.IN, machine.Pin.PULL_UP)
  
  
-# =========================================================
+
 # BITS APAGADOS — estado inicial del display
 
  
@@ -148,9 +140,8 @@ enviar_bit_init = True  # bandera para apagar al arrancar
 
 modo_salida = "ninguno"
 
-# =====================================
+
 # LEER ESTADO DEL DIP
-# =====================================
 
 def actualizar_modo():
 
@@ -178,9 +169,8 @@ def actualizar_modo():
     print("Modo:", modo_salida)
  
  
-# =========================================================
+
 # FUNCIÓN: enviar_bit
-# =========================================================
  
 def enviar_bit(valor):
  
@@ -201,9 +191,7 @@ def enviar_bit(valor):
 enviar_bit(BITS_APAGADOS)
  
  
-# =========================================================
-# FUNCIÓN: mostrar_caracter
-# =========================================================
+
  
 def mostrar_caracter(caracter):
  
@@ -222,10 +210,7 @@ def mostrar_caracter(caracter):
     enviar_bit(bits)
  
  
-# =========================================================
-# FUNCIÓN: recorrer_palabra
 # Muestra cada letra en el display con un retardo entre ellas
-# =========================================================
  
 def recorrer_palabra(palabra, tiempo_ms):
  
@@ -241,10 +226,8 @@ def recorrer_palabra(palabra, tiempo_ms):
     enviar_bit(BITS_APAGADOS)
  
  
-# =========================================================
-# FUNCIÓN: transmitir_morse
+
 # Emite la frase en morse por el buzzer
-# =========================================================
  
 def transmitir_morse(texto, unidad=200):
  
@@ -279,12 +262,10 @@ def transmitir_morse(texto, unidad=200):
         time.sleep_ms(unidad * 3)       # pausa entre letras
  
  
-# =========================================================
-# FUNCIÓN: leer_morse
+
 # Lee el botón físico y acumula puntos/rayas.
 # Decodifica la letra cuando detecta una pausa suficiente.
-# =========================================================
- 
+
 def leer_morse():
  
     global codigo_actual, mensaje_morse, tiempo_inicio_btn, ultimo_evento_ms
@@ -316,7 +297,7 @@ def leer_morse():
     # Pausa sin actividad
     pausa_actual = time.ticks_diff(time.ticks_ms(), ultimo_evento_ms)
  
-    # Fin de letra: pausa >= 3 unidades
+    # Fin de letra: pausa >= PAUSA_LETRAS
     if codigo_actual != "" and pausa_actual >= PAUSA_LETRAS:
  
         letra_decodificada = MORSE.get(codigo_actual, "?")
@@ -328,27 +309,26 @@ def leer_morse():
         mostrar_caracter(letra_decodificada)
  
         codigo_actual = ""
+        ultimo_evento_ms = time.ticks_ms()  # Reinicia para medir el espacio entre palabras
+ 
+    # Espacio entre palabras: pausa >= ESPACIO_PALABRAS
+    elif codigo_actual == "" and mensaje_morse != "" and not mensaje_morse.endswith(" ") and pausa_actual >= ESPACIO_PALABRAS:
+ 
+        mensaje_morse += " "
+ 
+        print("Espacio entre palabras")
+        print("Mensaje acumulado:", mensaje_morse)
+ 
+        mostrar_caracter(" ")
  
  
-# =========================================================
-# FUNCIÓN: leer_wifi
+
 # Acepta una conexión entrante y ejecuta el comando.
-#
-# Formatos esperados:
-#
-#   "ok|<texto>|<velocidad>"
-#   "ambos|<texto>|<velocidad>"  -> muestra en LEDs y emite en buzzer
-#
-#   "ACTIVAR_MORSE"              -> activa el botón físico durante 20 s
-#                                   y devuelve el texto decodificado
-#
-# El servidor está en modo no-bloqueante: si no hay cliente,
-# la excepción OSError se captura y se retorna sin hacer nada.
-# =========================================================
+
  
 def leer_wifi():
  
-    global mensaje_morse
+    global mensaje_morse, modo_salida
  
     try:
         cliente, direccion_cliente = servidor.accept()
@@ -366,11 +346,6 @@ def leer_wifi():
         cliente.close()
         return
  
-    # --------------------------------------------------
-    # MODO ACTIVAR_MORSE
-    # Corre el decodificador de botón durante 20 segundos
-    # y devuelve el texto acumulado como respuesta.
-    # --------------------------------------------------
  
     if datos_crudos == "ACTIVAR_MORSE":
  
@@ -396,40 +371,39 @@ def leer_wifi():
         mensaje_morse = ""
         return
  
-    # --------------------------------------------------
-    # MODO TRANSMISIÓN: "modo|texto|velocidad"
-    # --------------------------------------------------
  
     partes = datos_crudos.split("|")
  
     if len(partes) != 3:
-        print("Formato invalido — se esperaba: modo|texto|velocidad")
+        print("modo|texto|velocidad")
         cliente.send(b"ERROR:formato")
         cliente.close()
         return
  
     texto     = partes[1]
-    velocidad = (int(partes[2]))*4
+    velocidad = int(partes[2])
+    
+    actualizar_modo()
  
+    if modo_salida == "leds":
+        recorrer_palabra(texto, velocidad*7)
+ 
+    elif modo_salida == "buzzer":
+        transmitir_morse(texto, velocidad)
+ 
+    elif modo_salida == ("ambos"):
+        recorrer_palabra(texto, velocidad*7)
+        transmitir_morse(texto, velocidad)
+        
     cliente.send(b"OK")
     cliente.close()
- 
-    if modo == "led":
-        recorrer_palabra(texto, velocidad)
- 
-    elif modo == "morse":
-        transmitir_morse(texto, velocidad)
- 
-    elif modo in ("ok", "ambos"):
-        recorrer_palabra(texto, velocidad)
-        transmitir_morse(texto, velocidad)
- 
- 
-# =========================================================
-# LOOP PRINCIPAL
-# =========================================================
+    
+
 transmitir_morse("I")
  
+
+# LOOP PRINCIPAL
+
 while True:
     leer_wifi()
     time.sleep_ms(10)
