@@ -1,9 +1,3 @@
-# =========================================================
-# widgets.py
-# Funciones helper para crear widgets Tkinter con el
-# estilo visual de StrangerTEC.
-# =========================================================
-
 import tkinter as tk
 
 from constantes import (

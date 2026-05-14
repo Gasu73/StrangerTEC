@@ -1,22 +1,8 @@
-# =========================================================
-# red.py
-# Comunicación TCP con la Raspberry Pi.
-#
-# La PC actúa como CLIENTE para enviar comandos (puerto 5000)
-# y como SERVIDOR para recibir la respuesta del jugador B
-# que llega desde la Raspberry (puerto 6000).
-# =========================================================
-
 import socket
 import estado
 from constantes import PUERTO_RASPBERRY
 
 
-# ---------------------------------------------------------
-# ENVIAR COMANDO A LA RASPBERRY
-# Formato del mensaje:  modo|texto|velocidad
-# Modos válidos: "led", "morse", "ambos"
-# ---------------------------------------------------------
 
 def enviar_a_raspberry(ip, modo, velocidad=None):
 

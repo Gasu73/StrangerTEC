@@ -1,9 +1,3 @@
-# =========================================================
-# constantes.py
-# Colores, fuentes, tabla Morse y configuración del juego.
-# =========================================================
-
-
 # ---------------------------------------------------------
 # CONFIGURACIÓN DEL JUEGO
 # ---------------------------------------------------------
@@ -14,8 +8,7 @@ ARCHIVO_TOP10   = 'top10.json'
 # Puerto donde la Raspberry Pi escucha comandos de la PC
 PUERTO_RASPBERRY = 5000
 
-# Puerto donde la PC escucha respuestas de la Raspberry
-# (usado para recibir la respuesta del jugador B)
+
 PUERTO_ESCUCHA_PC = 6000
 
 FRASES_PREDETERMINADAS = [
@@ -47,9 +40,7 @@ FUENTE_NORMAL  = ('Courier New', 12)
 FUENTE_PEQUEÑA = ('Courier New', 10)
 
 
-# ---------------------------------------------------------
-# TABLA MORSE  letra -> código
-# ---------------------------------------------------------
+# Tabla morse
 
 MORSE = {
     'A': '.-',    'B': '-...', 'C': '-.-.', 'D': '-..',

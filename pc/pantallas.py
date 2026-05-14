@@ -1,8 +1,3 @@
-# =========================================================
-# pantallas.py
-# Define las 4 pantallas de la aplicación.
-# =========================================================
- 
 import tkinter as tk
 from tkinter import messagebox
 import random
@@ -48,9 +43,7 @@ def _limpiar():
     return pantalla_actual
  
  
-# =========================================================
-# CUENTA REGRESIVA
-# =========================================================
+# Cuenta regresiva
  
 def _cancelar_timer():
     if estado.id_timer_tkinter is not None:
@@ -84,11 +77,7 @@ def _iniciar_cuenta_regresiva(variable_timer, callback_fin):
     _tick()
  
  
-# =========================================================
-# MORSE EN TIEMPO REAL — TECLA K
-# =========================================================
- 
-# ID de los after() del cierre de letra y palabra
+#Morse Tecla K
 _id_cierre_letra   = None
 _id_cierre_palabra = None
  
@@ -185,9 +174,7 @@ def _resetear_morse_pc(variable_impulso=None, variable_texto=None):
         variable_texto.set('')
  
  
-# =========================================================
-# PANTALLA 1 — CONEXIÓN
-# =========================================================
+#Pantalla 1 - Conexion 
  
 def pantalla_conexion():
  
@@ -241,9 +228,7 @@ def pantalla_conexion():
     ).pack()
  
  
-# =========================================================
-# PANTALLA 2 — CONFIGURACIÓN DE PARTIDA
-# =========================================================
+#Pantalla 2 - Configuracion
  
 def pantalla_configuracion():
  
@@ -378,9 +363,7 @@ def pantalla_configuracion():
     ).pack(side='left', padx=10)
  
  
-# =========================================================
-# PANTALLA 3 — JUEGO
-# =========================================================
+#Pantalla 3 - Juego
  
 def pantalla_juego():
  
@@ -408,7 +391,7 @@ def pantalla_juego():
     fila = tk.Frame(pantalla, bg=COLOR_FONDO)
     fila.pack(fill='x', padx=4)
     var_morse = tk.StringVar()
-    crear_label_variable(fila, var_morse, FUENTE_NORMAL, COLOR_ROJO).pack(side='left')
+    #crear_label_variable(fila, var_morse, FUENTE_NORMAL, COLOR_ROJO).pack(side='left')
     var_timer = tk.StringVar()
     crear_label_variable(fila, var_timer, FUENTE_GRANDE, COLOR_VERDE).pack(side='right', padx=14)
  
@@ -457,9 +440,7 @@ def pantalla_juego():
     crear_label_variable(marc, var_pts_a, FUENTE_MEDIANA, COLOR_VERDE).pack(side='left', padx=14)
     crear_label_variable(marc, var_pts_b, FUENTE_MEDIANA, COLOR_VERDE).pack(side='right', padx=14)
  
-    # ==========================================================
-    # HELPERS
-    # ==========================================================
+    # helpers
  
     def actualizar_marcador():
         var_pts_a.set(f'{estado.nombre_jugador_a}: {estado.puntos_jugador_a} pts')
@@ -519,9 +500,8 @@ def pantalla_juego():
                 daemon=True,
             ).start()
  
-    # ==========================================================
+
     # MODO 1 — el jugador escribe la frase en texto normal
-    # ==========================================================
  
     def ronda_modo1():
         estado.ronda_actual += 1
@@ -555,9 +535,9 @@ def pantalla_juego():
             messagebox.showinfo(f'Ronda {estado.ronda_actual}', msg, parent=ventana)
             ronda_modo1()
  
-    # ==========================================================
+
     # MODO 2 — A en PC (tecla K), B en boton fisico; luego se invierten
-    # ==========================================================
+
  
     def ronda_modo2():
         estado.ronda_actual += 1
@@ -688,9 +668,7 @@ def pantalla_juego():
         ronda_modo2()
  
  
-# =========================================================
-# PANTALLA 4 — TOP 10
-# =========================================================
+# Pantalla 4 - top 10
  
 def pantalla_top10(volver=None):
  
